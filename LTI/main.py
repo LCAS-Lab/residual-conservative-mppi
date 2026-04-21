@@ -8,8 +8,19 @@ Reference:
   Yoon, Rasul, Tasnim, Kim — "Residual-Conservative Model Predictive
   Path Integral Control"
 
+Changes from original (consistency with paper):
+  1. Importance weights use w ∝ exp(−β_k · cost), where β_k is the
+     INVERSE temperature (eq. 12, 16). Higher β_k → sharper distribution.
+     Original used exp(−cost / β), i.e. β as temperature (opposite convention).
+  2. β_k modulation direction corrected: β_k starts small (BETA0) and
+     INCREASES with mismatch s̄_k, sharpening the distribution (Lemma 3,
+     Proposition 3). Hyperparams BETA0/BETA_MIN/BETA_MAX updated accordingly.
+  3. Residual sign corrected: e = x − x_pred = r_k (eq. 4: measured − predicted).
+  4. Success metric: goal-reached only (matches Table I definition).
+  5. Equation reference comment corrected: eq. (44), not eq. (29).
+
 Usage:
-  python rc_mppi.py
+  python main_cdc_final.py
 """
 
 import time
@@ -30,26 +41,29 @@ CPU   = torch.device("cpu")
 DTYPE = torch.float32
 
 # --- Simulation time ---
-DT              = 0.1          # [s] timestep
-SIM_STEPS_MC    = 300          # steps per trial in Monte Carlo
-SIM_STEPS_REPLAY = 300         # steps for the representative-seed replay
-GOAL_TOL        = 0.25         # [m] goal-reached distance threshold
+DT               = 0.1   # [s] timestep
+SIM_STEPS_MC     = 300   # steps per trial in Monte Carlo
+SIM_STEPS_REPLAY = 300   # steps for the representative-seed replay
+GOAL_TOL         = 0.25  # [m] goal-reached distance threshold
 
 # --- Task geometry ---
-START_STATE  = [0.0, 0.0, 0.0, 0.0]   # [px, py, vx, vy]
-GOAL_POS     = [5.0, 0.0]             # [px, py]
-OBS_CENTER   = [2.5, 0.0]             # [px, py]  (true obstacle center)
-OBS_RADIUS   = 1.2                    # [m]
+START_STATE = [0.0, 0.0, 0.0, 0.0]  # [px, py, vx, vy]
+GOAL_POS    = [5.0, 0.0]            # [px, py]
+OBS_CENTER  = [2.5, 0.0]            # [px, py]  (true obstacle center)
+OBS_RADIUS  = 1.2                   # [m]
 
 # --- Nominal LTI dynamics (damping = 0) ---
-DAMPING = 0.0                          # velocity damping coefficient
+DAMPING = 0.0  # velocity damping coefficient
 
 # --- MPPI hyper-parameters ---
-K_ROLLOUTS   = 8192    # number of sampled trajectories (halved on CPU)
-T_HORIZON    = 40      # planning horizon (steps)
-SIGMA0       = 1.0     # base control-noise std dev
-BETA0        = 1.0     # base MPPI temperature (inverse risk sensitivity)
-U_CLIP       = 4.0     # [m/s²] symmetric control saturation
+K_ROLLOUTS = 8192  # number of sampled trajectories (halved on CPU)
+T_HORIZON  = 40    # planning horizon (steps)
+SIGMA0     = 1.0   # base control-noise std dev  σ_0
+# β_0: base INVERSE temperature (paper eq. 16).
+# With w ∝ exp(−β·cost), β=1 is equivalent to the original exp(−cost/1).
+# Kept at 1.0 so vanilla MPPI behaviour is numerically unchanged.
+BETA0      = 1.0   # base inverse temperature β_0  (paper eq. 16)
+U_CLIP     = 4.0   # [m/s²] symmetric control saturation
 
 # --- Cost weights ---
 W_GOAL = 5.0
@@ -60,19 +74,20 @@ W_OBS  = 1e4
 
 # --- Execution (plant) model ---
 EXECUTION_MODEL = "lag"   # "exact" | "lag"
-SERVO_TAU       = 0.60     # [s] first-order lag time constant
+SERVO_TAU       = 0.60    # [s] first-order lag time constant
 
 # --- Obstacle uncertainty (stationary, no online estimation) ---
-OBS_NUM_SAMPLES = 8        # scenario samples per step
-OBS_RISK_MODE   = "cvar"   # "mean" | "cvar"
-OBS_CVAR_ALPHA  = 0.8      # CVaR tail fraction (ignored for "mean")
-OBS_UNC_STD     = 0.0      # [m] obstacle-center position uncertainty std
-OBS_MEAN_BIAS   = [0.0, 0.0]   # [m] constant bias on obstacle center belief
+OBS_NUM_SAMPLES = 8       # scenario samples per step
+OBS_RISK_MODE   = "cvar"  # "mean" | "cvar"
+OBS_CVAR_ALPHA  = 0.8     # CVaR tail fraction (ignored for "mean")
+OBS_UNC_STD     = 0.0     # [m] obstacle-center position uncertainty std
+OBS_MEAN_BIAS   = [0.0, 0.0]  # [m] constant bias on obstacle center belief
 
 # --- Residual-adaptive modulation ---
 USE_RISK_ADAPTATION = True
 
-# Residual weighting  (equation 29 in paper)
+# Residual weighting (equation 44 in paper):
+#   s_k = sqrt(w_p·||Δp||² + w_v'·||Δv||²)
 E_POS_W = 1.0
 E_VEL_W = 0.5
 
@@ -80,14 +95,26 @@ E_VEL_W = 0.5
 RISK_FILTER_RHO = 0.20
 
 # Modulation gains
-KAPPA_R     = 0.40   # radius-inflation gain
-KAPPA_SIGMA = 1.50   # σ-reduction gain
-KAPPA_BETA  = 1.00   # β-increase gain
+KAPPA_R     = 0.40  # radius-inflation gain          (constraint tightening)
+KAPPA_SIGMA = 1.50  # σ-reduction gain               (sampling modulation, eq. 16)
+KAPPA_BETA  = 1.00  # β-increase gain                (inverse temp, eq. 16)
+#
+# NOTE on β convention (paper eq. 16 vs original code):
+#   Paper:    β_k = clip(β_0 (1 + κ_β s̄_k), β_min, β_max)
+#             w ∝ exp(−β_k · cost)   ← β_k is INVERSE temperature
+#             As s̄_k ↑, β_k ↑ → distribution sharpens → safer rollouts weighted more.
+#   Original: w ∝ exp(−cost / β_k)  ← β_k was TEMPERATURE
+#             As s̄_k ↑, β_k ↑ → distribution SOFTENS (wrong direction).
+#   Fix: keep modulation formula identical; only change weight formula to match paper.
+#   Hyperparams: BETA0=1.0 (unchanged), BETA_MIN/MAX scaled to inverse-temp range.
 
 # Modulation saturation bounds
-R_MARGIN_MAX        = 1.0
+R_MARGIN_MAX         = 1.0
 SIGMA_MIN, SIGMA_MAX = 0.10, 2.50
-BETA_MIN,  BETA_MAX  = 0.20, 5.00
+# β bounds in INVERSE-temperature units (β_min < β_0 < β_max).
+# β_min = 0.2 → very soft (permissive) baseline
+# β_max = 5.0 → sharp (conservative) ceiling under high mismatch
+BETA_MIN, BETA_MAX   = 0.20, 5.00
 
 # --- Monte Carlo protocol ---
 MC_N_TRIALS  = 50
@@ -105,6 +132,7 @@ _obs_r    = torch.tensor(OBS_RADIUS, device=GPU, dtype=DTYPE)
 
 _obs_bias_cpu = torch.tensor(OBS_MEAN_BIAS, dtype=DTYPE)
 
+
 def _build_dynamics():
     A = torch.tensor(
         [[1, 0, DT, 0],
@@ -121,6 +149,7 @@ def _build_dynamics():
         dtype=DTYPE,
     )
     return A, B
+
 
 _A_cpu, _B_cpu = _build_dynamics()
 _A_gpu = _A_cpu.to(GPU)
@@ -148,7 +177,7 @@ def step_plant(x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         return _A_cpu @ x + _B_cpu @ u
 
     if EXECUTION_MODEL == "lag":
-        p, v = x[:2], x[2:]
+        p, v   = x[:2], x[2:]
         v_ref  = v + DT * u
         v_next = (1.0 - _alpha_servo) * v + _alpha_servo * v_ref
         p_next = p + DT * v_next
@@ -163,12 +192,13 @@ def step_plant(x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
 
 def mismatch_score(e: torch.Tensor) -> float:
     """
-    Weighted L2 norm of a prediction error vector.
-    Implements equation (29): s_k = sqrt(wp||Δp||² + wv'||Δv||²)
+    Weighted L2 norm of the one-step prediction residual.
+    Implements equation (44): s_k = sqrt(w_p||Δp||² + w_v'||Δv||²)
 
     Parameters
     ----------
-    e : (4,) prediction error  [Δpx, Δpy, Δvx, Δvy]
+    e : (4,) residual r_k = y_k − f_θ(y_{k-1}, u_{k-1})  [Δpx, Δpy, Δvx, Δvy]
+        (measured minus predicted, consistent with eq. 4)
     """
     s2 = E_POS_W * torch.sum(e[:2] ** 2) + E_VEL_W * torch.sum(e[2:] ** 2)
     return float(torch.sqrt(s2).item())
@@ -176,17 +206,23 @@ def mismatch_score(e: torch.Tensor) -> float:
 
 def modulate(s_bar: float) -> tuple[float, float, float]:
     """
-    Map the filtered residual statistic s̄_k to adaptive parameters.
+    Map the filtered residual statistic s̄_k to adaptive parameters
+    (equations 14, 15, 16 in paper).
 
     Returns
     -------
-    margin    : obstacle-radius inflation  Δr(s̄_k)
-    sigma_eff : effective MPPI noise std   σ_k
-    beta_eff  : effective MPPI temperature β_k
+    margin    : obstacle-radius inflation  Δr(s̄_k)      — eq. 14 / Remark 3
+    sigma_eff : effective MPPI noise std   σ_k ↓         — eq. 16
+    beta_eff  : effective inverse temperature β_k ↑      — eq. 16
+                Higher β_k → sharper importance weights → safer rollouts
+                dominate (Lemma 3, Proposition 3).
     """
-    margin    = float(np.clip(KAPPA_R     * s_bar,           0.0,      R_MARGIN_MAX))
-    sigma_eff = float(np.clip(SIGMA0      / (1.0 + KAPPA_SIGMA * s_bar), SIGMA_MIN, SIGMA_MAX))
-    beta_eff  = float(np.clip(BETA0       * (1.0 + KAPPA_BETA  * s_bar), BETA_MIN,  BETA_MAX))
+    margin    = float(np.clip(KAPPA_R * s_bar, 0.0, R_MARGIN_MAX))
+    sigma_eff = float(np.clip(SIGMA0 / (1.0 + KAPPA_SIGMA * s_bar),
+                               SIGMA_MIN, SIGMA_MAX))
+    # β_k increases with mismatch (paper eq. 16): β_k = clip(β_0(1+κ_β s̄_k), …)
+    beta_eff  = float(np.clip(BETA0 * (1.0 + KAPPA_BETA * s_bar),
+                               BETA_MIN, BETA_MAX))
     return margin, sigma_eff, beta_eff
 
 
@@ -243,14 +279,14 @@ def running_cost(x_k4: torch.Tensor,
                  radius_eff: torch.Tensor) -> torch.Tensor:
     """
     Vectorized stage cost for K rollouts at one time step.
-    Implements equation (27)–(28).
+    Implements equations (10)–(11), (42)–(43).
 
     Parameters
     ----------
-    x_k4         : (K, 4) state batch
-    u_k2         : (K, 2) control batch
+    x_k4           : (K, 4) state batch
+    u_k2           : (K, 2) control batch
     obs_centers_m2 : (M, 2) obstacle scenario centers
-    radius_eff   : scalar effective obstacle radius
+    radius_eff     : scalar effective obstacle radius
 
     Returns
     -------
@@ -264,8 +300,8 @@ def running_cost(x_k4: torch.Tensor,
     ctrl_cost = W_CTRL * torch.sum(u_k2 ** 2, dim=1)
 
     # Obstacle: quadratic penetration cost, aggregated over scenarios
-    diff = pos[:, None, :] - obs_centers_m2[None, :, :]   # (K, M, 2)
-    dist = torch.linalg.norm(diff, dim=2)                  # (K, M)
+    diff = pos[:, None, :] - obs_centers_m2[None, :, :]  # (K, M, 2)
+    dist = torch.linalg.norm(diff, dim=2)                 # (K, M)
     pen  = torch.zeros_like(dist)
     mask = dist < radius_eff
     pen[mask] = W_OBS * (radius_eff - dist[mask]) ** 2
@@ -276,7 +312,7 @@ def running_cost(x_k4: torch.Tensor,
 
 def terminal_cost(x_k4: torch.Tensor) -> torch.Tensor:
     """
-    Terminal cost for K rollouts. Implements ℓ_f(x).
+    Terminal cost for K rollouts. Implements ℓ_f(x) (eq. 10, 42).
 
     Parameters
     ----------
@@ -313,8 +349,11 @@ def mppi_step(x0: torch.Tensor,
     obs_centers : (M, 2)  obstacle scenario centers (GPU)
     radius_eff  : scalar  effective obstacle radius
     K           : int     number of rollouts
-    sigma       : float   control noise std dev
-    beta        : float   temperature (inverse risk sensitivity)
+    sigma       : float   control noise std dev  σ_k
+    beta        : float   INVERSE temperature β_k  (paper eq. 12, 16)
+                          w^(i) ∝ exp(−β_k · Z^(i))
+                          Higher β_k → sharper weights → low-cost rollouts
+                          dominate more strongly (Lemma 3).
 
     Returns
     -------
@@ -323,25 +362,29 @@ def mppi_step(x0: torch.Tensor,
     """
     T = u_bar.shape[0]
 
-    # Sample control perturbations ε ~ N(0, σ²I)
+    # Sample control perturbations ε ~ N(0, σ_k² I)  (eq. 16)
     eps  = sigma * torch.randn(K, T, 2, device=GPU, dtype=DTYPE)
     x    = x0[None, :].expand(K, -1).clone()
     cost = torch.zeros(K, device=GPU, dtype=DTYPE)
 
     for t in range(T):
-        u  = u_bar[t][None, :] + eps[:, t, :]
-        x  = x @ _A_gpu.T + u @ _B_gpu.T
+        u     = u_bar[t][None, :] + eps[:, t, :]
+        x     = x @ _A_gpu.T + u @ _B_gpu.T
         cost += running_cost(x, u, obs_centers, radius_eff)
 
     cost += terminal_cost(x)
 
-    # Importance weights  w(i) ∝ exp(−cost / β)
-    cost -= cost.min()
-    w     = torch.exp(-cost / beta)
+    # Importance weights  w^(i) ∝ exp(−β_k · Z^(i))   (eq. 12)
+    # β_k is the INVERSE temperature: higher β_k sharpens the distribution,
+    # concentrating weight on low-cost (safe) rollouts — consistent with
+    # Lemma 3 and Proposition 3.  (Paper convention; fixes original code
+    # which used exp(−cost / β), treating β as temperature — wrong direction.)
+    cost -= cost.min()                         # numerical stabilisation
+    w     = torch.exp(-beta * cost)            # ← paper eq. 12 convention
     w    /= w.sum() + 1e-12
 
-    # Weighted perturbation update
-    du       = torch.einsum("k,ktd->td", w, eps)   # (T, 2)
+    # Weighted perturbation update  (eq. 13)
+    du        = torch.einsum("k,ktd->td", w, eps)  # (T, 2)
     u_bar_new = u_bar + du
     u0        = torch.clamp(u_bar_new[0], -U_CLIP, U_CLIP)
     return u0, u_bar_new
@@ -385,12 +428,19 @@ def path_length(pos: np.ndarray) -> float:
 
 
 def compute_metrics(pos: np.ndarray, steps: int, tol: float = GOAL_TOL) -> dict:
-    """Aggregate all scalar metrics for one trajectory."""
-    t_goal      = time_to_goal(pos, tol)
-    n_viol      = violation_count(pos)
+    """
+    Aggregate all scalar metrics for one trajectory.
+
+    Success definition (consistent with Table I in paper):
+      A trial is successful if the goal is reached within the allotted steps,
+      regardless of whether constraint violations occurred.  The violation_steps
+      metric separately quantifies safety.
+    """
+    t_goal       = time_to_goal(pos, tol)
+    n_viol       = violation_count(pos)
     goal_reached = t_goal >= 0
     return dict(
-        success       = int(goal_reached and n_viol == 0),
+        success       = int(goal_reached),          # eq. Table I: goal-reached only
         t_goal        = t_goal if goal_reached else steps + 1,
         min_clearance = min_clearance(pos),
         violations    = n_viol,
@@ -451,9 +501,12 @@ def simulate(steps: int = SIM_STEPS_MC,
         # 1. Compute residual & determine adaptive parameters
         # --------------------------------------------------
         if adaptive and k > 0:
+            # Nominal one-step prediction
             x_pred = _A_cpu @ x_prev + _B_cpu @ u_prev
-            e      = x_pred - x
+            # r_k = y_k − f_θ(y_{k-1}, u_{k-1})  (eq. 4: measured − predicted)
+            e      = x - x_pred
             s      = mismatch_score(e)
+            # Exponential filter  s̄_k = (1−ρ)s̄_{k-1} + ρ s_k  (eq. 6)
             s_bar  = (1.0 - RISK_FILTER_RHO) * s_bar + RISK_FILTER_RHO * s
             margin, sigma_eff, beta_eff = modulate(s_bar)
         else:
@@ -487,7 +540,7 @@ def simulate(steps: int = SIM_STEPS_MC,
         if log:
             s_hist.append(s_bar)
 
-    pos     = np.asarray(pos_log)
+    pos    = np.asarray(pos_log)
     metrics = compute_metrics(pos, steps)
     debug   = dict(s_bar=np.asarray(s_hist)) if log else None
     return pos, metrics, debug
@@ -536,11 +589,16 @@ def summarize_mc(results: dict):
     print("=" * 58)
 
     metrics_cfg = [
-        ("success",       "Success rate",         lambda x: f"{x.mean():.2f}",              False),
-        ("t_goal",        "Time-to-goal (steps)", lambda x: f"{x.mean():.1f} ± {x.std():.1f}", True),
-        ("min_clearance", "Min clearance (m)",    lambda x: f"{x.mean():.3f} ± {x.std():.3f}", True),
-        ("violations",    "Violation steps",      lambda x: f"{x.mean():.2f} ± {x.std():.2f}", True),
-        ("path_len",      "Path length (m)",      lambda x: f"{x.mean():.2f} ± {x.std():.2f}", True),
+        ("success",       "Success rate",
+         lambda x: f"{x.mean():.2f}",                   False),
+        ("t_goal",        "Time-to-goal (steps)",
+         lambda x: f"{x.mean():.1f} ± {x.std():.1f}",  True),
+        ("min_clearance", "Min clearance (m)",
+         lambda x: f"{x.mean():.3f} ± {x.std():.3f}",  True),
+        ("violations",    "Violation steps",
+         lambda x: f"{x.mean():.2f} ± {x.std():.2f}",  True),
+        ("path_len",      "Path length (m)",
+         lambda x: f"{x.mean():.2f} ± {x.std():.2f}",  True),
     ]
 
     for key, label, fmt, _ in metrics_cfg:
@@ -670,6 +728,7 @@ if __name__ == "__main__":
           + (f" α={OBS_CVAR_ALPHA}" if OBS_RISK_MODE == "cvar" else "")
           + f"  M={OBS_NUM_SAMPLES}  σ_obs={OBS_UNC_STD}")
     print(f"  Adaptation      : {'ON' if USE_RISK_ADAPTATION else 'OFF'}")
+    print(f"  β convention    : inverse temperature (w ∝ exp(−β·cost))")
     print(f"  MC trials       : {MC_N_TRIALS}")
     print("=" * 55)
 
@@ -679,7 +738,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------
     # Monte Carlo evaluation
     # ----------------------------------------------------------
-    print(f"\nRunning {MC_N_TRIALS} paired-seed MC trials ...")
+    print(f"\nRunning {MC_N_TRIALS} paired-seed MC trials …")
     t0 = time.time()
     results, seeds = run_mc(n_trials=MC_N_TRIALS, base_seed=MC_BASE_SEED,
                             steps=SIM_STEPS_MC, K=K)
@@ -694,7 +753,7 @@ if __name__ == "__main__":
     print(f"\nRepresentative seed: {seed_star}  (index {idx_star})")
     print(f"  Reason: {reason}")
 
-    print("\nReplaying representative seed ...")
+    print("\nReplaying representative seed …")
     set_seed(seed_star)
     traj_v, met_v, _ = simulate(steps=SIM_STEPS_REPLAY, K=K,
                                  adaptive=False, log=True)
@@ -711,7 +770,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------
     # Figures
     # ----------------------------------------------------------
-    print("\nSaving figures ...")
+    print("\nSaving figures …")
     plot_trajectories(traj_v, traj_a, seed_star)
     plot_clearance   (traj_v, traj_a, seed_star)
     plot_mc_scatter  (results, idx_star)

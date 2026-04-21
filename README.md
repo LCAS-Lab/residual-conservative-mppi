@@ -20,7 +20,9 @@ RC-MPPI computes a filtered residual statistic from the discrepancy between pred
 
 As model mismatch increases, conservatism increases automatically. As residuals diminish, the controller recovers nominal MPPI behavior.
 
-![Trajectory comparison](assets/rc_mppi_fig1_trajectories.png)
+| Trajectories | Clearance vs. Time | MC Scatter |
+|:---:|:---:|:---:|
+| ![Trajectories](rc_mppi_fig1_trajectories.png) | ![Clearance](rc_mppi_fig2_clearance.png) | ![MC Scatter](rc_mppi_fig3_mc_scatter.png) |
 
 ---
 
@@ -46,9 +48,9 @@ This will:
 1. Run `N=50` paired-seed Monte Carlo trials (Vanilla MPPI vs. RC-MPPI)
 2. Print a summary table of performance metrics
 3. Replay the representative seed and save three figures:
-   - `rc_mppi_fig1_trajectories.pdf` — trajectory overlay
-   - `rc_mppi_fig2_clearance.pdf` — clearance vs. time
-   - `rc_mppi_fig3_mc_scatter.pdf` — paired MC scatter plot
+   - `rc_mppi_fig1_trajectories.png` — trajectory overlay
+   - `rc_mppi_fig2_clearance.png` — clearance vs. time
+   - `rc_mppi_fig3_mc_scatter.png` — paired MC scatter plot
 
 ### Key configuration options
 
@@ -71,17 +73,17 @@ To run vanilla MPPI only, set `USE_RISK_ADAPTATION = False`.
 
 ## Results
 
-Monte Carlo evaluation under servo-lag execution mismatch (`τ = 0.60 s`, `n = 50` paired-seed trials):
+Monte Carlo evaluation under servo-lag execution mismatch (`τ = 0.60 s`, `n = 50` paired-seed trials, `K = 8192` rollouts, CUDA):
 
 | Metric | Vanilla MPPI | RC-MPPI |
 |--------|-------------|---------|
-| Success rate | — | — |
-| Time-to-goal (steps) | — ± — | — ± — |
-| Min clearance (m) | — ± — | — ± — |
-| Violation steps | — ± — | 0.00 ± 0.00 |
-| Path length (m) | — ± — | — ± — |
+| Success rate | 0.62 | **0.90** |
+| Time-to-goal (steps) | 198.9 ± 27.7 | **176.0 ± 18.9** |
+| Min clearance (m) | 0.014 ± 0.271 | **0.196 ± 0.202** |
+| Violation steps | 5.68 ± 8.39 | **1.62 ± 5.47** |
+| Path length (m) | 15.88 ± 2.20 | **14.19 ± 1.60** |
 
-*Fill in with your experimental results.*
+RC-MPPI achieves a 45% relative improvement in success rate, reduces violation steps by 71%, and increases mean minimum clearance by 13×, without incurring longer paths or slower goal arrival. In the representative trial (seed 25), Vanilla MPPI penetrates the obstacle (−0.611 m, 31 violation steps) while RC-MPPI maintains 0.239 m clearance and reaches the goal successfully.
 
 ---
 
