@@ -1,127 +1,106 @@
-# Residual-Conservative MPPI (RC-MPPI)
+# Residual-Conservative Model Predictive Path Integral Control
 
-Official implementation of **RC-MPPI**, a sampling-based Model Predictive Control framework that modulates safety conservatism online using execution prediction residuals.
+This repository contains the simulation and reproducibility code for the paper
 
-> **Residual-Conservative Model Predictive Path Integral Control**  
-> Hyung-Jin Yoon, Ashik Rasul, Humaira Tasnim, and Hunmin Kim  
-> Department of Mechanical and Nuclear Engineering, Tennessee Technological University  
-> [[Paper]](#citation) [[Code]](https://github.com/LCAS-Lab/residual-conservative-mppi)
+**Residual-Conservative Model Predictive Path Integral Control**  
+Hyung-Jin Yoon and Hunmin Kim
 
----
+RC-MPPI uses the measured prediction--execution residual to adapt constraint tightening, safety-cost scaling, MPPI sampling spread, and temperature when the nominal rollout model becomes less reliable. The implementation separates physical model--plant mismatch from the Gaussian perturbations used internally by MPPI for Monte Carlo exploration.
 
-## Overview
+## Repository structure
 
-RC-MPPI addresses the problem of online conservatism adaptation under execution mismatch. When a high-level planner relies on a simplified nominal model, actuation lag, saturation, and unmodeled dynamics create a persistent prediction–execution discrepancy that can lead to constraint violations.
+- `sim1_lti.py` — LTI point-mass simulation.
+- `sim2_2links.py` — planar 2R manipulator simulation.
+- `sim1_lti_acc_audit.py` — audited LTI experiment used for the ACC manuscript.
+- `sim2_2links_acc_audit.py` — audited 2R experiment used for the ACC manuscript.
+- `scripts/generate_final_p4_figures.py` — regenerates the final manuscript figures from frozen audit artifacts without rerunning Monte Carlo simulations.
+- `reproducibility/` — frozen audit records, metadata, per-trial metrics, logs, and representative trajectories.
 
-RC-MPPI computes a filtered residual statistic from the discrepancy between predicted and realized state transitions, and embeds it into the MPPI optimization via:
-- **Residual-dependent constraint tightening** — obstacle radius inflation scales with observed mismatch
-- **Adaptive safety-cost shaping** — penalty weight increases under larger residuals
-- **Adaptive sampling parameters** — noise std and temperature modulated by residual
+## Manuscript numerical source
 
-As model mismatch increases, conservatism increases automatically. As residuals diminish, the controller recovers nominal MPPI behavior.
+The numerical values reported in the ACC manuscript are frozen from the school-GPU audit performed on **2026-09-17**:
 
-| Trajectories | Clearance vs. Time | MC Scatter |
-|:---:|:---:|:---:|
-| ![Trajectories](rc_mppi_fig1_trajectories.png) | ![Clearance](rc_mppi_fig2_clearance.png) | ![MC Scatter](rc_mppi_fig3_mc_scatter.png) |
+- `reproducibility/lti_accaudit_school_gpu_20260917/`
+- `reproducibility/2r_accaudit_school_gpu_20260917/`
 
----
+These runs used the same consistency-corrected implementation and were performed without controller retuning. The stored metadata records the source commit, experiment settings, execution environment, and notes on the distinction between practical saturated tightening and the sufficient theoretical tightening margin.
 
-## Requirements
+Independent cross-machine audit records are retained in:
+
+- `reproducibility/lti_accaudit_home_gpu_20260916/`
+- `reproducibility/2r_accaudit_home_cpu_20260916/`
+
+The older LTI reference results are preserved in:
+
+- `reproducibility/lti_canonical_20260610/`
+
+## Audited implementation conventions
+
+The ACC audit versions use the following implementation conventions.
+
+1. Raw MPPI control perturbations are Gaussian.
+2. Sampled rollout commands are clipped to the admissible input bounds before nominal propagation.
+3. The MPPI mean update uses the corresponding **effective clipped perturbations**, i.e., the actual sampled-command displacement from the mean command.
+4. The simulation obstacle inflation is the practical saturated rule
+   ```
+   clip(kappa_r * s_bar, 0, Delta_r_max)
+   ```
+   and is not asserted to equal the sufficient theoretical tightening margin in the paper.
+5. In the 2R study, feedback and residual estimation use noisy measurements, while success, clearance, violation, and path-length metrics are evaluated from the noiseless true plant state.
+
+## Reproducing the audited experiments
+
+From the repository root:
 
 ```bash
+python3 sim1_lti_acc_audit.py
+python3 sim2_2links_acc_audit.py
+```
+
+The scripts create run-specific output directories under `results/`, which is intentionally excluded from version control. Frozen manuscript-source outputs are already stored under `reproducibility/`.
+
+## Regenerating the manuscript figures
+
+The final figures are generated from the frozen representative-trajectory files:
+
+```bash
+python3 scripts/generate_final_p4_figures.py
+```
+
+This produces:
+
+- `fig1_trajectory_seed16.pdf` — LTI representative trajectory.
+- `fig1_traj.pdf` — 2R representative trajectory.
+- `fig2_clearance.pdf` — 2R link-clearance history.
+
+The figure script uses embedded TrueType PDF fonts (`pdf.fonttype = 42`).
+
+## Reproduced software/hardware environment
+
+The frozen 2026-09-17 manuscript-source audit recorded:
+
+- OS: Linux 6.8 / x86_64
+- Python: 3.10.12
+- NumPy: 1.24.4
+- PyTorch: 2.9.1+cu126
+- CUDA runtime reported by PyTorch: 12.6
+- cuDNN: 91002
+- GPU: NVIDIA GeForce RTX 4080
+
+The code can also run on CPU, although exact Monte Carlo outcomes can vary slightly across hardware/backends. The independent audit records are retained to document this reproducibility check.
+
+## Installation
+
+A minimal Python environment can be installed with:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Tested with Python 3.10+. GPU execution (CUDA) is supported and recommended for the full `K=8192` rollout count; the code falls back to CPU automatically with a reduced rollout budget.
-
----
-
-## Usage
-
-Run the full Monte Carlo evaluation and generate figures:
-
-```bash
-python rc_mppi.py
-```
-
-This will:
-1. Run `N=50` paired-seed Monte Carlo trials (Vanilla MPPI vs. RC-MPPI)
-2. Print a summary table of performance metrics
-3. Replay the representative seed and save three figures:
-   - `rc_mppi_fig1_trajectories.png` — trajectory overlay
-   - `rc_mppi_fig2_clearance.png` — clearance vs. time
-   - `rc_mppi_fig3_mc_scatter.png` — paired MC scatter plot
-
-### Key configuration options
-
-All hyperparameters are set via constants at the top of `rc_mppi.py`:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `EXECUTION_MODEL` | `"lag"` | Plant model: `"exact"` or `"lag"` |
-| `SERVO_TAU` | `0.60` | First-order lag time constant (s) |
-| `K_ROLLOUTS` | `8192` | Number of MPPI rollout samples |
-| `T_HORIZON` | `40` | Planning horizon (steps) |
-| `USE_RISK_ADAPTATION` | `True` | Enable RC-MPPI modulation |
-| `KAPPA_R` | `0.40` | Radius inflation gain |
-| `RISK_FILTER_RHO` | `0.20` | Exponential filter rate ρ |
-| `MC_N_TRIALS` | `50` | Number of Monte Carlo trials |
-
-To run vanilla MPPI only, set `USE_RISK_ADAPTATION = False`.
-
----
-
-## Results
-
-Monte Carlo evaluation under servo-lag execution mismatch (`τ = 0.60 s`, `n = 50` paired-seed trials, `K = 8192` rollouts, CUDA):
-
-| Metric | Vanilla MPPI | RC-MPPI |
-|--------|-------------|---------|
-| Success rate | 0.62 | **0.90** |
-| Time-to-goal (steps) | 198.9 ± 27.7 | **176.0 ± 18.9** |
-| Min clearance (m) | 0.014 ± 0.271 | **0.196 ± 0.202** |
-| Violation steps | 5.68 ± 8.39 | **1.62 ± 5.47** |
-| Path length (m) | 15.88 ± 2.20 | **14.19 ± 1.60** |
-
-RC-MPPI achieves a 45% relative improvement in success rate, reduces violation steps by 71%, and increases mean minimum clearance by 13×, without incurring longer paths or slower goal arrival. In the representative trial (seed 25), Vanilla MPPI penetrates the obstacle (−0.611 m, 31 violation steps) while RC-MPPI maintains 0.239 m clearance and reaches the goal successfully.
-
----
-
-## Repository Structure
-
-```
-residual-conservative-mppi/
-├── rc_mppi.py          # Main simulation: RC-MPPI and Vanilla MPPI
-├── requirements.txt    # Python dependencies
-├── LICENSE             # MIT License
-└── README.md           # This file
-```
-
----
+For CUDA-enabled PyTorch, install the PyTorch build appropriate for the local CUDA/driver environment if the default `pip` package is not suitable.
 
 ## Citation
 
-If you use this code in your research, please cite:
-
-```bibtex
-@inproceedings{yoon2025rcmppi,
-  title     = {Residual-Conservative Model Predictive Path Integral Control},
-  author    = {Yoon, Hyung-Jin and Rasul, Ashik and Tasnim, Humaira and Kim, Hunmin},
-  year      = {2025},
-  note      = {Code available at \url{https://github.com/LCAS-Lab/residual-conservative-mppi}}
-}
-
-@software{yoon2025rcmppi_code,
-  title     = {{RC-MPPI}: Residual-Conservative Model Predictive Path Integral Control},
-  author    = {Yoon, Hyung-Jin and Rasul, Ashik and Tasnim, Humaira and Kim, Hunmin},
-  year      = {2025},
-  url       = {https://github.com/LCAS-Lab/residual-conservative-mppi},
-  license   = {MIT}
-}
-```
-
----
-
-## License
-
-This project is released under the [MIT License](LICENSE).
+If you use this repository, please cite the accompanying paper. A formal citation will be added after publication.

@@ -1,0 +1,58 @@
+{
+  "settings": {
+    "SERVO_TAU": 0.9,
+    "alpha_servo": 0.1052,
+    "dt": 0.1,
+    "n_trials": 50,
+    "beta_convention": "beta INCREASES with s_bar (softer under mismatch)",
+    "representative_seed": 21,
+    "representative_index": 21,
+    "representative_reason": "vanilla violated (21 steps), RC-MPPI clean"
+  },
+  "aggregate": {
+    "vanilla": {
+      "success": {
+        "mean": 0.64,
+        "std": 0.48
+      },
+      "t_goal": {
+        "mean": 232.78,
+        "std": 22.707082595525122
+      },
+      "min_clearance": {
+        "mean": 0.04895417213439941,
+        "std": 0.10488186771106796
+      },
+      "viols": {
+        "mean": 4.16,
+        "std": 6.316201390076158
+      },
+      "path_len": {
+        "mean": 15.852717018127441,
+        "std": 0.8950055119498811
+      }
+    },
+    "adaptive": {
+      "success": {
+        "mean": 0.94,
+        "std": 0.23748684174075838
+      },
+      "t_goal": {
+        "mean": 249.0,
+        "std": 12.622202660391727
+      },
+      "min_clearance": {
+        "mean": 0.13258856773376465,
+        "std": 0.0905091034146401
+      },
+      "viols": {
+        "mean": 0.62,
+        "std": 2.629752840097335
+      },
+      "path_len": {
+        "mean": 16.424377040863035,
+        "std": 0.7366935198988462
+      }
+    }
+  }
+}

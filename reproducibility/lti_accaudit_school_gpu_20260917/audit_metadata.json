@@ -1,0 +1,49 @@
+{
+  "timestamp_local": "2026-09-17T18:39:34",
+  "script": "sim1_lti_acc_audit.py",
+  "experiment_role": "LTI code-paper consistency audit candidate",
+  "controller_retuned": false,
+  "sampled_rollout_input_clipping": true,
+  "mppi_update_uses_effective_clipped_perturbation": true,
+  "practical_tightening_note": "The simulation uses clip(kappa_r*s_bar, 0, Delta_r_max) as a practical obstacle-radius increment. It is not asserted here to equal the theorem's certified sufficient tightening margin.",
+  "git": {
+    "commit": "b059f4cbe33df431fc2a880c2db15647671675c0",
+    "branch": "p4-sim-consistency-audit-v1",
+    "status": "?? __pycache__/\n?? lti_acc_audit_school.log"
+  },
+  "environment": {
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
+    "python": "3.10.12 (main, Aug 31 2026, 10:18:17) [GCC 11.4.0]",
+    "numpy": "1.24.4",
+    "torch": "2.9.1+cu126",
+    "cuda_runtime": "12.6",
+    "cudnn": 91002,
+    "cuda_available": true,
+    "device": "cuda",
+    "gpu_name": "NVIDIA GeForce RTX 4080"
+  },
+  "settings": {
+    "SERVO_TAU": 0.9,
+    "alpha_servo": 0.10516068318563021,
+    "dt": 0.1,
+    "n_trials": 50,
+    "base_seed": 0,
+    "seed_range": [
+      0,
+      49
+    ],
+    "K": 2048,
+    "T": 40,
+    "steps_mc": 300,
+    "steps_rep": 300,
+    "sigma0": 1.0,
+    "beta0": 1.0,
+    "goal_tol": 0.25,
+    "U_CLIP": 4.0,
+    "KAPPA_R": 1.0,
+    "DELTA_R_MAX": 1.0,
+    "KAPPA_SIGMA": 0.5,
+    "KAPPA_BETA": 5.0,
+    "beta_convention": "w proportional to exp(-Z/beta); larger beta is softer"
+  }
+}

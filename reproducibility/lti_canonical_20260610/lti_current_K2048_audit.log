@@ -1,0 +1,18 @@
+CURRENT CODE REPRODUCTION AUDIT
+tau = 0.9
+K = 2048, n = 50, T = 40, steps = 300
+
+====================================================================
+Metric                             Vanilla MPPI              RC-MPPI
+====================================================================
+Success rate                               0.54                 0.80
+Time-to-goal (steps)             229.20 ± 26.43       248.02 ± 18.71
+Min clearance (m)                   0.00 ± 0.12          0.13 ± 0.11
+Violation steps                     6.46 ± 7.94          1.32 ± 3.46
+Path length (m)                    16.14 ± 0.73         16.55 ± 0.75
+====================================================================
+
+Representative seed: 31
+Reason: vanilla violated (28 steps), RC-MPPI clean
+vanilla {'success': 0, 't_goal': 252, 'min_clearance': -0.1637411117553711, 'viols': 28, 'max_penetration': 0.1637411117553711, 'path_len': 14.340819358825684}
+adaptive {'success': 1, 't_goal': 264, 'min_clearance': 0.06599736213684082, 'viols': 0, 'max_penetration': 0.0, 'path_len': 16.98196029663086}
