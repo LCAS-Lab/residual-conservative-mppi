@@ -1,0 +1,61 @@
+{
+  "timestamp_local": "2026-09-16T21:02:15",
+  "script": "sim2_2links_acc_audit.py",
+  "experiment_role": "2R code-paper consistency audit candidate",
+  "controller_retuned": false,
+  "sampled_rollout_torque_clipping": true,
+  "mppi_update_uses_effective_clipped_perturbation": true,
+  "reported_metrics_use_true_noiseless_plant_state": true,
+  "feedback_and_residual_use_noisy_measurements": true,
+  "measurement_noise_note": "Gaussian measurement noise is retained as a stochastic stress test; it is not asserted to satisfy the deterministic bounded-defect theorem.",
+  "practical_tightening_note": "The simulation uses clip(kappa_r*s_bar, 0, Delta_r_max) as a practical obstacle-radius increment. It is not asserted to equal the theorem's certified sufficient tightening margin.",
+  "git": {
+    "commit": "7f77e9b3c0b54e479351762024c9720981c38968",
+    "branch": "p4-sim-consistency-audit-v1",
+    "status": "?? P4_LTI_ACC_audit_home_20260916.tar.gz\n?? P4_LTI_canonical_K2048_20260610.tar.gz\n?? __pycache__/\n?? fig1_traj.pdf\n?? fig2_clearance.pdf\n?? fig3_modulation_profile.pdf\n?? lti_acc_audit_home.log\n?? lti_current_K2048_audit.log\n?? sim2_acc_audit_home.log"
+  },
+  "environment": {
+    "platform": "Linux-6.8.0-136-generic-x86_64-with-glibc2.35",
+    "python": "3.10.12 (main, Jun 22 2026, 18:55:27) [GCC 11.4.0]",
+    "numpy": "2.2.6",
+    "torch": "2.13.0+cu130",
+    "cuda_runtime": "13.0",
+    "cudnn": 92000,
+    "cuda_available": false,
+    "device": "cpu",
+    "gpu_name": "CPU"
+  },
+  "settings": {
+    "DT": 0.02,
+    "SERVO_TAU": 0.15,
+    "TAU_MAX": 6.0,
+    "true_masses": [
+      1.0,
+      0.8
+    ],
+    "nominal_masses": [
+      1.1,
+      0.5
+    ],
+    "B_DAMP": 0.1,
+    "Q_STD": 0.002,
+    "QD_STD": 0.01,
+    "n_trials": 50,
+    "base_seed": 0,
+    "seed_range": [
+      0,
+      49
+    ],
+    "K": 4096,
+    "T": 35,
+    "steps": 200,
+    "goal_tol": 0.05,
+    "SIGMA_0": 1.0,
+    "BETA_0": 2.0,
+    "KAPPA_R": 0.15,
+    "DELTA_R_MAX": 0.1,
+    "KAPPA_SIGMA": 0.5,
+    "KAPPA_BETA": 5.0,
+    "beta_convention": "w proportional to exp(-Z/beta); larger beta is softer"
+  }
+}

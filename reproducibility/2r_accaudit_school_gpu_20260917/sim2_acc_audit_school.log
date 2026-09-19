@@ -1,0 +1,43 @@
+P4 2R consistency-audit candidate
+Device    : cuda
+SERVO_TAU : 0.150 s
+TAU_MAX   : 6.0 N m
+Rollouts  : sampled torques CLIPPED to actuator bounds
+Update    : uses effective perturbation after clipping
+Metrics   : noiseless true plant state
+Feedback  : noisy measured state retained
+Theory    : measurement noise treated as stress test, not theorem assumption
+Tightening: practical residual-dependent radius increment
+
+MC: n=50, K=4096, steps=200, T=35, tol=0.05
+Output: results/2r_accaudit_n50_K4096_T35_steps200_20260917_184345
+MC trial  1/50
+MC trial  5/50
+MC trial 10/50
+MC trial 15/50
+MC trial 20/50
+MC trial 25/50
+MC trial 30/50
+MC trial 35/50
+MC trial 40/50
+MC trial 45/50
+MC trial 50/50
+MC elapsed: 543.7s
+
+====================================================================
+Metric                             Vanilla MPPI            RC-MPPI
+====================================================================
+Success rate                               0.30               1.00
+Time-to-goal (steps)           145.76 ± 84.38      17.80 ± 0.45   
+Min link clearance (m)          -0.01 ± 0.02        0.02 ± 0.01   
+Violation steps                  4.16 ± 4.45        0.00 ± 0.00   
+EE path length (m)               5.43 ± 0.26        3.90 ± 0.15   
+Commanded control energy      3407.42 ± 284.39   1382.29 ± 104.33 
+Executed control energy       1246.19 ± 103.50    572.82 ± 44.19  
+====================================================================
+
+Representative seed: 26 (vanilla violated (16 steps), RC-MPPI clean)
+  van: success=0, TTG=201, clr=-0.0685 m, viols=16, path=5.802 m
+  rc: success=1, TTG=18, clr=0.0177 m, viols=0, path=3.887 m
+
+Audit run complete.

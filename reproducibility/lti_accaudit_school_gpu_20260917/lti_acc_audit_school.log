@@ -1,0 +1,32 @@
+P4 LTI consistency-audit candidate
+Device    : cuda
+SERVO_TAU : 0.900 s (alpha=0.1052)
+Weights   : exp(-cost/beta), larger beta = softer
+Rollouts  : sampled commands CLIPPED to actuator bounds
+Update    : uses effective perturbation after clipping
+Tightening: practical residual-dependent radius increment
+
+MC: n=50, K=2048, steps=300, T=40
+    sigma0=1.0, beta0=1.0, goal_tol=0.25
+    kappa_r=1.0, kappa_sigma=0.5, kappa_beta=5.0
+
+Output: results/lti_accaudit_tau_0p90_n50_K2048_T40_steps300_20260917_183934
+MC elapsed: 179.7s
+
+====================================================================
+Metric                             Vanilla MPPI              RC-MPPI
+====================================================================
+Success rate                               0.66                 0.92
+Time-to-goal (steps)             219.58 ± 21.27       238.94 ± 12.84
+Min clearance (m)                   0.04 ± 0.09          0.11 ± 0.09
+Violation steps                     3.56 ± 5.44          0.78 ± 3.11
+Path length (m)                    16.17 ± 0.71         16.63 ± 0.73
+====================================================================
+
+Representative seed: 16 (vanilla violated (17 steps), RC-MPPI clean)
+
+Representative trial (seed=16):
+  Vanilla: clr=-0.156m, viols=17, success=0, TTG=196, path=17.443m
+  RC-MPPI: clr=0.026m, viols=0, success=1, TTG=239, path=16.975m
+
+Audit run complete.
